@@ -1,21 +1,21 @@
 {
   "model_a": {
-    "accuracy": 0.7493,
-    "macro_f1": 0.4322,
+    "accuracy": 0.7492,
+    "macro_f1": 0.4323,
     "confusion_matrix": [
       [
-        26299,
-        59
+        26295,
+        63
       ],
       [
-        8751,
-        35
+        8750,
+        36
       ]
     ],
-    "bleu": 0.3809,
-    "rouge_l": 0.4466,
-    "meteor": 0.434,
-    "exact_match": 0.324,
+    "bleu": 0.3855,
+    "rouge_l": 0.4509,
+    "meteor": 0.4384,
+    "exact_match": 0.33,
     "model_used": "ensemble"
   },
   "model_b": {
@@ -28,9 +28,9 @@
     "n_samples_evaluated": 100
   },
   "unsupervised": {
-    "kmeans_silhouette": 0.056,
+    "kmeans_silhouette": 0.0553,
     "kmeans_purity": 0.75,
-    "label_prop_f1": 0.4367
+    "label_prop_f1": 0.4374
   },
   "benchmark": {
     "bert_base_accuracy": 0.664,

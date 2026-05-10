@@ -257,14 +257,14 @@ elif screen == "Hints":
         st.error("Models not loaded — check sidebar.")
         st.stop()
 
-    article      = clean_text(st.session_state["article"])
-    question     = clean_text(st.session_state["question"])
+    article      = st.session_state["article"]
+    question     = st.session_state["question"]
     correct_lbl  = st.session_state.get("answer", "A")
     options      = st.session_state.get("options", {})
     correct_text = clean_text(str(options.get(correct_lbl, "")))
 
     # Compute hints once per article and cache in session
-    hint_key = f"hints_{hash(article[:50])}"
+    hint_key = f"hints_v2_{hash(article[:80] + question[:80])}"
     if hint_key not in st.session_state:
         with st.spinner("Generating hints …"):
             st.session_state[hint_key] = generate_hints(
@@ -317,7 +317,8 @@ elif screen == "Hints":
         with st.spinner("Generating distractors …"):
             dists = generate_distractors(
                 article, question, correct_text,
-                dist_vec, n=3, ranker=ranker
+                dist_vec, n=3, ranker=ranker,
+                exclude_texts=list(hints.values())
             )
         st.subheader("Generated Distractors")
         for i, d in enumerate(dists, 1):

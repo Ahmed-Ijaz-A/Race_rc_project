@@ -2,6 +2,7 @@
 models/**/*.pkl
 models/**/*.npz
 models/**/*.npy
+models/**/*.joblib
 
 # Large data files
 data/raw/source.csv
@@ -10,7 +11,31 @@ data/raw/val.csv
 data/raw/test.csv
 data/processed/
 
+# Virtual environments
+env/
+.venv/
+venv/
+ENV/
+
 # Python cache
 __pycache__/
+**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -116,13 +116,45 @@ def predict_answer(article: str, question: str,
     return best_label, float(best_score)
 
 
+def _article_sentence_candidates(article: str) -> list:
+    """
+    Return unique article sentences as (display_text, cleaned_text).
+
+    Sentence splitting must happen before clean_text(), because clean_text()
+    removes punctuation that split_sentences() uses to find boundaries.
+    """
+    raw_sentences = split_sentences(article)
+    if not raw_sentences and str(article).strip():
+        raw_sentences = [str(article).strip()]
+
+    candidates = []
+    seen = set()
+    for sentence in raw_sentences:
+        display = " ".join(str(sentence).split())
+        cleaned = clean_text(display)
+        if len(cleaned) < 10 or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        candidates.append((display, cleaned))
+    return candidates
+
+
+def _too_similar(text: str, selected: list, vectorizer, threshold: float = 0.88) -> bool:
+    if not selected:
+        return False
+    text_vec = vectorizer.transform([text])
+    selected_vecs = vectorizer.transform(selected)
+    return bool(np.max(cosine_similarity(text_vec, selected_vecs)[0]) >= threshold)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Model B — distractor generation
 # ══════════════════════════════════════════════════════════════════════════════
 
 def generate_distractors(article: str, question: str,
                          correct_answer: str, vectorizer,
-                         n: int = 3, ranker=None) -> list:
+                         n: int = 3, ranker=None,
+                         exclude_texts: list = None) -> list:
     """
     Return up to n distractor strings extracted from the article.
     Uses the distractor_vectorizer (not ohe_vectorizer).
@@ -133,53 +165,72 @@ def generate_distractors(article: str, question: str,
     """
     art     = clean_text(article)
     correct = clean_text(correct_answer)
+    excluded = {clean_text(text) for text in (exclude_texts or []) if str(text).strip()}
 
-    sentences = split_sentences(art)
-    if not sentences:
+    sentence_pairs = _article_sentence_candidates(article)
+    if not sentence_pairs:
         return []
 
-    all_texts  = [correct] + sentences
+    sentence_texts = [cleaned for _, cleaned in sentence_pairs]
+    all_texts  = [correct] + sentence_texts
     vectors    = vectorizer.transform(all_texts)
     ans_vec    = vectors[0]
     sent_vecs  = vectors[1:]
     sims       = cosine_similarity(ans_vec, sent_vecs)[0]
-    ranked     = sorted(zip(sentences, sims), key=lambda x: x[1], reverse=True)[:20]
+    ranked     = sorted(
+        [(display, cleaned, sim) for (display, cleaned), sim in zip(sentence_pairs, sims)],
+        key=lambda x: x[2],
+        reverse=True,
+    )[:20]
 
-    filtered = [(s, sim) for s, sim in ranked
-                if correct.lower()[:30] not in s.lower() and sim < 0.95]
+    filtered = [
+        (display, cleaned, sim) for display, cleaned, sim in ranked
+        if correct[:30] not in cleaned and cleaned not in excluded and sim < 0.95
+    ]
     if not filtered:
-        filtered = ranked
+        filtered = [
+            (display, cleaned, sim) for display, cleaned, sim in ranked
+            if cleaned not in excluded
+        ]
 
     if ranker is not None:
-        texts     = [s for s, _ in filtered]
         v_art     = vectorizer.transform([art])
         v_cor     = vectorizer.transform([correct])
         feat_rows = []
-        for sent in texts:
-            v_s = vectorizer.transform([sent])
+        for _, cleaned, _ in filtered:
+            v_s = vectorizer.transform([cleaned])
             feat_rows.append([
                 cosine_similarity(v_s, v_art)[0][0],
                 cosine_similarity(v_s, v_cor)[0][0],
-                len(sent.split()) / max(1, len(correct.split())),
+                len(cleaned.split()) / max(1, len(correct.split())),
             ])
         probs    = ranker.predict_proba(np.array(feat_rows))[:, 1]
         order    = np.argsort(probs)[::-1]
         filtered = [filtered[i] for i in order]
 
-    pool:     list = [s for s, _ in filtered]
+    pool:     list = [(display, cleaned) for display, cleaned, _ in filtered]
     selected: list = []
+    selected_cleaned: list = []
     for _ in range(n):
         if not pool:
             break
         scores = []
-        for cand in pool:
-            v1       = vectorizer.transform([cand])
+        for _, cand_cleaned in pool:
+            if _too_similar(cand_cleaned, selected_cleaned, vectorizer):
+                scores.append(-np.inf)
+                continue
+            v1       = vectorizer.transform([cand_cleaned])
             v2       = vectorizer.transform([correct])
             base_sim = cosine_similarity(v1, v2)[0][0]
             div      = sum(cosine_similarity(v1, vectorizer.transform([s]))[0][0]
-                           for s in selected)
+                           for s in selected_cleaned)
             scores.append(base_sim - 0.5 * div)
-        selected.append(pool.pop(int(np.argmax(scores))))
+        best_idx = int(np.argmax(scores))
+        if not np.isfinite(scores[best_idx]):
+            break
+        best_display, best_cleaned = pool.pop(best_idx)
+        selected.append(best_display)
+        selected_cleaned.append(best_cleaned)
 
     return selected[:n]
 
@@ -200,27 +251,66 @@ def generate_hints(article: str, question: str,
     q       = clean_text(question)
     correct = clean_text(correct_answer)
 
-    sentences = split_sentences(art)
-    while len(sentences) < 3:
-        sentences.append(sentences[-1] if sentences else "No hint available.")
+    sentence_pairs = _article_sentence_candidates(article)
+    if not sentence_pairs:
+        return {
+            "hint_1": "Review the question and compare it with the passage.",
+            "hint_2": "Eliminate options not supported by the passage.",
+            "hint_3": "Look for the sentence most directly related to the question.",
+        }
 
-    texts  = [q] + sentences
+    sentence_texts = [cleaned for _, cleaned in sentence_pairs]
+    texts  = [q] + sentence_texts
     vecs   = vectorizer.transform(texts)
     q_vec  = vecs[0]
     s_vecs = vecs[1:]
     sims   = cosine_similarity(q_vec, s_vecs)[0]
-    ranked = sorted(zip(sentences, sims), key=lambda x: x[1], reverse=True)
+    ranked = sorted(
+        [(display, cleaned, sim) for (display, cleaned), sim in zip(sentence_pairs, sims)],
+        key=lambda x: x[2],
+        reverse=True,
+    )
 
-    filtered = [(s, sim) for s, sim in ranked
-                if correct.lower()[:20] not in s.lower()]
+    filtered = [(display, cleaned, sim) for display, cleaned, sim in ranked
+                if correct[:20] not in cleaned]
     if len(filtered) < 3:
-        filtered = ranked  # fallback
+        filtered = filtered + [item for item in ranked if item not in filtered]
 
-    n = len(filtered)
+    pick_order = [len(filtered) - 1, len(filtered) // 2, 0]
+    selected = []
+    selected_cleaned = []
+    for idx in pick_order:
+        display, cleaned, _ = filtered[idx]
+        if cleaned not in selected_cleaned and not _too_similar(
+            cleaned, selected_cleaned, vectorizer, threshold=0.75
+        ):
+            selected.append(display)
+            selected_cleaned.append(cleaned)
+
+    for display, cleaned, _ in filtered:
+        if len(selected) == 3:
+            break
+        if cleaned in selected_cleaned or _too_similar(
+            cleaned, selected_cleaned, vectorizer, threshold=0.75
+        ):
+            continue
+        selected.append(display)
+        selected_cleaned.append(cleaned)
+
+    fallback_hints = [
+        "Review the question and compare it with the passage.",
+        "Eliminate options not supported by the passage.",
+        "Look for the sentence most directly related to the question.",
+    ]
+    for hint in fallback_hints:
+        if len(selected) == 3:
+            break
+        selected.append(hint)
+
     return {
-        "hint_1": filtered[n - 1][0],
-        "hint_2": filtered[n // 2][0],
-        "hint_3": filtered[0][0],
+        "hint_1": selected[0],
+        "hint_2": selected[1],
+        "hint_3": selected[2],
     }
 
 
