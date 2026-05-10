@@ -1,0 +1,9 @@
+{
+  "distractor_bleu": 0.0033,
+  "distractor_rouge_l": 0.0244,
+  "distractor_meteor": 0.0792,
+  "distractor_accuracy": 0.88,
+  "hint_rouge_l": 0.0298,
+  "hint_meteor": 0.0956,
+  "n_samples_evaluated": 100
+}
