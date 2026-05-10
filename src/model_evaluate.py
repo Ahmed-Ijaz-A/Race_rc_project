@@ -303,7 +303,7 @@ def run_full_evaluation(n_samples_a: int = 500, n_samples_b: int = 100) -> dict:
         json.dump(results, f, indent=2)
 
     _print_summary(results)
-    print(f"\n✅ Evaluation complete.  Results saved to {RESULT_PATH}")
+    print(f"\n Evaluation complete.  Results saved to {RESULT_PATH}")
     return results
 
 
