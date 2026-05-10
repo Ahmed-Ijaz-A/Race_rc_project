@@ -1,12 +1,14 @@
-# Data files — too large for GitHub
+# Large binary model files
+models/**/*.pkl
+models/**/*.npz
+models/**/*.npy
+
+# Large data files
 data/raw/source.csv
 data/raw/train.csv
 data/raw/val.csv
 data/raw/test.csv
 data/processed/
-
-# Model weights
-models/
 
 # Python cache
 __pycache__/
